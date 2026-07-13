@@ -1,0 +1,35 @@
+services:
+  monitor:
+    build: .
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${DB_USER:-apsystems}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+      POSTGRES_DB: ${DB_NAME:-apsystems_monitor}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-apsystems}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

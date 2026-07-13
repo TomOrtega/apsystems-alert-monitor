@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 700px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: #007bff; color: white; padding: 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .body { padding: 20px; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-weight: bold; color: #333; font-size: 16px; border-bottom: 2px solid #007bff; padding-bottom: 8px; margin-bottom: 12px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 15px; }
+        .stat-box { text-align: center; padding: 12px; border-radius: 6px; background: #f8f9fa; }
+        .stat-number { font-size: 24px; font-weight: bold; }
+        .stat-label { font-size: 11px; color: #666; text-transform: uppercase; margin-top: 4px; }
+        .stat-green .stat-number { color: #28a745; }
+        .stat-yellow .stat-number { color: #ffc107; }
+        .stat-red .stat-number { color: #dc3545; }
+        .stat-grey .stat-number { color: #6c757d; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: bold; color: #555; }
+        .footer { padding: 15px 20px; background: #f8f9fa; text-align: center; font-size: 11px; color: #888; }
+        .light-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+        .light-green { background: #28a745; }
+        .light-yellow { background: #ffc107; }
+        .light-red { background: #dc3545; }
+        .light-grey { background: #6c757d; }
+        .light-unknown { background: #dee2e6; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Reporte Diario - APsystems Monitor</h1>
+            <div style="margin-top: 8px; opacity: 0.9;">{{ date }}</div>
+        </div>
+        <div class="body">
+            {% for account in accounts %}
+            <div class="section">
+                <div class="section-title">{{ account.name }}</div>
+                <div class="stats-grid">
+                    <div class="stat-box stat-green">
+                        <div class="stat-number">{{ account.green }}</div>
+                        <div class="stat-label">Normal</div>
+                    </div>
+                    <div class="stat-box stat-yellow">
+                        <div class="stat-number">{{ account.yellow }}</div>
+                        <div class="stat-label">Alarma</div>
+                    </div>
+                    <div class="stat-box stat-red">
+                        <div class="stat-number">{{ account.red }}</div>
+                        <div class="stat-label">Offline</div>
+                    </div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-box stat-grey">
+                        <div class="stat-number">{{ account.grey }}</div>
+                        <div class="stat-label">Sin datos</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">{{ account.total }}</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-number">{{ account.api_calls }}</div>
+                        <div class="stat-label">Llamadas API</div>
+                    </div>
+                </div>
+                {% if account.alertas %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>SID</th>
+                            <th>Severidad</th>
+                            <th>Mensaje</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for alerta in account.alertas %}
+                        <tr>
+                            <td>{{ alerta.sid }}</td>
+                            <td>
+                                <span class="light-indicator light-{{ alerta.light_color }}"></span>
+                                {{ alerta.severidad|upper }}
+                            </td>
+                            <td>{{ alerta.mensaje }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            </div>
+            {% endfor %}
+
+            <div class="section">
+                <div class="section-title">Uso de API</div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cuenta</th>
+                            <th>Llamadas este mes</th>
+                            <th>Restantes (est.)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for usage in api_usage %}
+                        <tr>
+                            <td>{{ usage.name }}</td>
+                            <td>{{ usage.used }}</td>
+                            <td>{{ usage.remaining }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <div class="footer">
+            APsystems Alert Monitor &mdash; Reporte generado automaticamente
+        </div>
+    </div>
+</body>
+</html>

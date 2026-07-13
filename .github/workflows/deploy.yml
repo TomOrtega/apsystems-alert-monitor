@@ -1,0 +1,52 @@
+name: Build and Deploy to DigitalOcean
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  IMAGE_NAME: apsystems-monitor
+  REGISTRY: registry.digitalocean.com
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }}:${{ github.sha }} .
+          docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:latest
+
+      - name: Run tests
+        run: |
+          docker run --rm \
+            -e DB_HOST=localhost \
+            -e DB_PORT=5432 \
+            -e DB_USER=apsystems \
+            -e DB_PASSWORD=test \
+            -e DB_NAME=test \
+            ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            python -c "from src.config import load_config; print('Import OK')"
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USER }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          script: |
+            cd /opt/apsystems-alert-monitor
+            git pull origin main
+            docker compose down
+            docker compose up -d --build
+            docker compose logs --tail=20

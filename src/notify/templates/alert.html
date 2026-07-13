@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .header { background: {% if severidad == 'critical' %}#dc3545{% elif severidad == 'warning' %}#ffc107{% else %}#17a2b8{% endif %}; color: white; padding: 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 20px; }
+        .header .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; background: rgba(255,255,255,0.3); font-size: 12px; margin-top: 8px; }
+        .body { padding: 20px; }
+        .field { margin-bottom: 12px; }
+        .field-label { font-weight: bold; color: #555; font-size: 12px; text-transform: uppercase; }
+        .field-value { color: #333; font-size: 14px; margin-top: 4px; }
+        .footer { padding: 15px 20px; background: #f8f9fa; text-align: center; font-size: 11px; color: #888; }
+        .light-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
+        .light-green { background: #28a745; }
+        .light-yellow { background: #ffc107; }
+        .light-red { background: #dc3545; }
+        .light-grey { background: #6c757d; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Alerta APsystems</h1>
+            <div class="badge">{{ severidad|upper }}</div>
+        </div>
+        <div class="body">
+            <div class="field">
+                <div class="field-label">Cuenta</div>
+                <div class="field-value">{{ account_name }}</div>
+            </div>
+            <div class="field">
+                <div class="field-label">System ID</div>
+                <div class="field-value"><strong>{{ sid }}</strong></div>
+            </div>
+            <div class="field">
+                <div class="field-label">Tipo de Alerta</div>
+                <div class="field-value">{{ tipo }}</div>
+            </div>
+            <div class="field">
+                <div class="field-label">Estado</div>
+                <div class="field-value">
+                    {% if light_anterior is not none %}
+                    <span class="light-indicator light-{{ light_anterior_color }}"></span> {{ light_anterior_label }}
+                    {% else %}
+                    <em>Sin datos previos</em>
+                    {% endif %}
+                    &rarr;
+                    <span class="light-indicator light-{{ light_nuevo_color }}"></span> {{ light_nuevo_label }}
+                </div>
+            </div>
+            <div class="field">
+                <div class="field-label">Detalle</div>
+                <div class="field-value">{{ mensaje }}</div>
+            </div>
+            <div class="field">
+                <div class="field-label">Fecha/Hora</div>
+                <div class="field-value">{{ timestamp }}</div>
+            </div>
+        </div>
+        <div class="footer">
+            APsystems Alert Monitor &mdash; Generado automaticamente
+        </div>
+    </div>
+</body>
+</html>
