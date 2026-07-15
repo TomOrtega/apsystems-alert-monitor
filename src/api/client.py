@@ -72,7 +72,12 @@ class ApsystemsClient:
                 method=method, url=url, headers=headers, params=params, timeout=30
             )
             elapsed_ms = int((time.time() - start) * 1000)
-            resp.raise_for_status()
+
+            if resp.status_code != 200:
+                body_text = resp.text[:500]
+                logger.error("API HTTP %d: %s %s -> body: %s", resp.status_code, method, path, body_text)
+                resp.raise_for_status()
+
         except requests.RequestException as e:
             logger.error("Request failed: %s %s -> %s", method, path, e)
             raise
@@ -81,7 +86,7 @@ class ApsystemsClient:
         code = data.get("code", -1)
 
         if code != 0:
-            raise ApsystemsApiError(code, f"code={code}", path)
+            raise ApsystemsApiError(code, f"code={code}, msg={data.get('msg', '')}", path)
 
         logger.debug(
             "API %s %s -> %d (%dms)", method, path, resp.status_code, elapsed_ms

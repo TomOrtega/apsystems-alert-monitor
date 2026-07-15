@@ -42,6 +42,7 @@ export const api = {
   accounts: () => request('/api/accounts'),
   addAccount: (data) => request('/api/accounts', { method: 'POST', body: JSON.stringify(data) }),
   deleteAccount: (index) => request(`/api/accounts/${index}`, { method: 'DELETE' }),
+  testAccount: (index) => request(`/api/accounts/${index}/test`, { method: 'POST' }),
   updateSmtp: (data) => request('/api/config/smtp', { method: 'PUT', body: JSON.stringify(data) }),
   updateTelegram: (data) => request('/api/config/telegram', { method: 'PUT', body: JSON.stringify(data) }),
   updateAccounts: (data) => request('/api/config/accounts', { method: 'PUT', body: JSON.stringify(data) }),

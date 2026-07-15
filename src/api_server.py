@@ -492,6 +492,48 @@ def delete_account(index: int):
         db.close()
 
 
+@app.post("/api/accounts/{index}/test")
+def test_account_api(index: int):
+    db = _get_db()
+    try:
+        conn = db._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, value FROM config WHERE section = 'accounts' ORDER BY id")
+            raw = {r[0]: r[1] for r in cur.fetchall()}
+
+        prefix = f"account{index}"
+        app_id = raw.get(f"{prefix}_app_id", "")
+        if not app_id:
+            raise HTTPException(status_code=404, detail=f"Cuenta {index} no encontrada")
+
+        app_secret = raw.get(f"{prefix}_app_secret", "")
+        base_url = raw.get(f"{prefix}_base_url", "https://api.apsystemsema.com:9282")
+
+        if not app_id or not app_secret:
+            raise HTTPException(status_code=400, detail="App ID y App Secret son obligatorios")
+
+        from src.api.client import ApsystemsClient, ApiAccount
+        client = ApsystemsClient(account=ApiAccount(app_id=app_id, app_secret=app_secret, base_url=base_url))
+
+        try:
+            data = client.get_systems_batch(page=1, size=1)
+            total = data.get("total", 0)
+            return {"ok": True, "message": f"Autenticacion exitosa. {total} sistemas encontrados en la cuenta.", "total_systems": total}
+        except Exception as e:
+            error_msg = str(e)
+            if "401" in error_msg or "Unauthorized" in error_msg:
+                raise HTTPException(status_code=401, detail="Credenciales invalidas - verifica App ID y App Secret")
+            elif "403" in error_msg or "Forbidden" in error_msg:
+                raise HTTPException(status_code=403, detail="Acceso denegado - verifica los permisos de la cuenta")
+            elif "500" in error_msg:
+                raise HTTPException(status_code=502, detail=f"Error del servidor APsystems: {error_msg}")
+            else:
+                raise HTTPException(status_code=500, detail=f"Error conectando con APsystems: {error_msg}")
+
+    finally:
+        db.close()
+
+
 @app.post("/api/test/smtp")
 def test_smtp():
     db = _get_db()

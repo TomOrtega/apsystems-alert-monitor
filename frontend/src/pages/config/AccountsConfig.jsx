@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Save, Server, Search } from 'lucide-react'
+import { Plus, Trash2, Save, Server, Search, Zap } from 'lucide-react'
 import { api } from '../../api'
 import DescubrirSistemas from './DescubrirSistemas'
 
@@ -9,6 +9,8 @@ export default function AccountsConfig() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
   const [discoverAccount, setDiscoverAccount] = useState(null)
+  const [testingIndex, setTestingIndex] = useState(null)
+  const [testResults, setTestResults] = useState({})
 
   const load = async () => {
     setLoading(true)
@@ -65,6 +67,18 @@ export default function AccountsConfig() {
     setSaving(false)
   }
 
+  const testCredentials = async (index) => {
+    setTestingIndex(index)
+    setTestResults((prev) => ({ ...prev, [index]: null }))
+    try {
+      const result = await api.testAccount(index)
+      setTestResults((prev) => ({ ...prev, [index]: { ok: true, message: result.message, total: result.total_systems } }))
+    } catch (e) {
+      setTestResults((prev) => ({ ...prev, [index]: { ok: false, message: e.message } }))
+    }
+    setTestingIndex(null)
+  }
+
   if (loading) return <div className="flex items-center justify-center h-64 text-gray-500">Cargando...</div>
 
   return (
@@ -99,6 +113,10 @@ export default function AccountsConfig() {
                 <h3 className="font-semibold">Cuenta {idx + 1}: {acc.name || 'Sin nombre'}</h3>
               </div>
               <div className="flex gap-2">
+                <button onClick={() => testCredentials(acc.index)} disabled={testingIndex === acc.index} className="btn-secondary text-sm flex items-center gap-1">
+                  <Zap size={14} className={testingIndex === acc.index ? 'animate-pulse' : ''} />
+                  {testingIndex === acc.index ? 'Probando...' : 'Probar API'}
+                </button>
                 <button onClick={() => setDiscoverAccount({ index: acc.index, name: acc.name })} className="btn-secondary text-sm flex items-center gap-1">
                   <Search size={14} /> Descubrir sistemas
                 </button>
@@ -107,6 +125,14 @@ export default function AccountsConfig() {
                 </button>
               </div>
             </div>
+
+            {testResults[acc.index] && (
+              <div className={`mb-4 p-3 rounded-lg text-sm ${testResults[acc.index].ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                {testResults[acc.index].ok
+                  ? `OK - ${testResults[acc.index].message}`
+                  : `Error - ${testResults[acc.index].message}`}
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Nombre</label>
