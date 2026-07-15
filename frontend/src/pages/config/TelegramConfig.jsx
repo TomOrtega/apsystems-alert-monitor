@@ -6,6 +6,7 @@ export default function TelegramConfig() {
   const [data, setData] = useState({ enabled: 'false', bot_token: '', chat_id: '' })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [testing, setTesting] = useState(false)
   const [msg, setMsg] = useState('')
 
   const load = async () => {
@@ -48,9 +49,14 @@ export default function TelegramConfig() {
           <h1 className="text-2xl font-bold text-gray-900">Configuracion Telegram</h1>
           <p className="text-sm text-gray-500">Notificaciones via Telegram Bot</p>
         </div>
-        <button onClick={save} disabled={saving} className="btn-primary flex items-center gap-2">
-          <Save size={16} /> {saving ? 'Guardando...' : 'Guardar'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={async () => { setTesting(true); setMsg(''); try { await api.testTelegram(); setMsg('Mensaje de prueba enviado a Telegram'); } catch (e) { setMsg('Error: ' + e.message); } setTesting(false) }} disabled={testing} className="btn-secondary flex items-center gap-2">
+            <Send size={16} /> {testing ? 'Enviando...' : 'Probar bot'}
+          </button>
+          <button onClick={save} disabled={saving} className="btn-primary flex items-center gap-2">
+            <Save size={16} /> {saving ? 'Guardando...' : 'Guardar'}
+          </button>
+        </div>
       </div>
 
       {msg && (

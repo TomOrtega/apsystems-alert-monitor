@@ -481,3 +481,75 @@ def delete_account(index: int):
         return {"ok": True}
     finally:
         db.close()
+
+
+@app.post("/api/test/smtp")
+def test_smtp():
+    db = _get_db()
+    try:
+        conn = db._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, value FROM config WHERE section = 'smtp'")
+            raw = {r[0]: r[1] for r in cur.fetchall()}
+        db.close()
+
+        host = raw.get("host", "")
+        port = int(raw.get("port", "587"))
+        user = raw.get("user", "")
+        password = raw.get("password", "")
+        from_addr = raw.get("from_addr", "")
+        alert_to = raw.get("alert_to", "")
+
+        if not all([host, user, password, alert_to]):
+            raise HTTPException(status_code=400, detail="Faltan campos SMTP (host, user, password, alert_to)")
+
+        import smtplib
+        from email.mime.text import MIMEText
+
+        msg = MIMEText("Test de APsystems Monitor - SMTP configurado correctamente")
+        msg["Subject"] = "Test APsystems Monitor"
+        msg["From"] = from_addr or user
+        msg["To"] = alert_to
+
+        with smtplib.SMTP(host, port, timeout=10) as server:
+            server.starttls()
+            server.login(user, password)
+            server.sendmail(msg["From"], [alert_to], msg.as_string())
+
+        return {"ok": True, "message": f"Email de prueba enviado a {alert_to}"}
+    except HTTPException:
+        raise
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=400, detail="Error de autenticacion SMTP - verifica usuario y password")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error SMTP: {str(e)}")
+
+
+@app.post("/api/test/telegram")
+def test_telegram():
+    db = _get_db()
+    try:
+        conn = db._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, value FROM config WHERE section = 'telegram'")
+            raw = {r[0]: r[1] for r in cur.fetchall()}
+        db.close()
+
+        bot_token = raw.get("bot_token", "")
+        chat_id = raw.get("chat_id", "")
+
+        if not bot_token or not chat_id:
+            raise HTTPException(status_code=400, detail="Faltan Bot Token o Chat ID")
+
+        from src.notify.telegram_sender import TelegramSender
+        tg = TelegramSender(bot_token, chat_id)
+
+        if tg.test_connection():
+            tg.send_message("Test de APsystems Monitor - Telegram configurado correctamente")
+            return {"ok": True, "message": "Mensaje de prueba enviado a Telegram"}
+        else:
+            raise HTTPException(status_code=400, detail="No se pudo conectar al bot de Telegram - verifica el token")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error Telegram: {str(e)}")

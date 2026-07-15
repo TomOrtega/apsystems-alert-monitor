@@ -48,9 +48,13 @@ export default function AccountsConfig() {
     setSaving(true)
     setMsg('')
     try {
-      await Promise.all(accounts.map((a) =>
-        api.addAccount({ name: a.name, app_id: a.app_id, app_secret: a.app_secret, base_url: a.base_url, systems: a.systems })
-      ))
+      await api.updateAccounts(accounts.map((a) => ({
+        name: a.name,
+        app_id: a.app_id,
+        app_secret: a.app_secret,
+        base_url: a.base_url,
+        systems: a.systems,
+      })))
       setMsg('Guardado correctamente')
       await load()
     } catch (e) {
