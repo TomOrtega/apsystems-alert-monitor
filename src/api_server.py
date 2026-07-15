@@ -1,7 +1,6 @@
 import os
 import json
 import logging
-import subprocess
 from datetime import datetime, date
 from pathlib import Path
 from contextlib import asynccontextmanager
@@ -10,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from src.config import DbConfig
+from src.config import DbConfig, AccountConfig
 from src.storage.db import Database
 
 logger = logging.getLogger(__name__)
@@ -32,6 +31,12 @@ def _get_db() -> Database:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        db = _get_db()
+        db.run_migrations()
+        db.close()
+    except Exception as e:
+        logger.warning("Error ejecutando migraciones: %s", e)
     yield
 
 
@@ -81,6 +86,10 @@ class TelegramData(BaseModel):
 class SchedulerData(BaseModel):
     check_interval_hours: str = "24"
     alert_retention_days: str = "90"
+
+
+class MonitoredSystemsData(BaseModel):
+    sids: list[str]
 
 
 LIGHT_LABELS = {1: "Normal", 2: "Alarma inversor", 3: "ECU offline", 4: "Sin datos"}
@@ -553,3 +562,151 @@ def test_telegram():
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error Telegram: {str(e)}")
+
+
+@app.post("/api/accounts/{index}/discover")
+def discover_systems(index: int):
+    db = _get_db()
+    try:
+        conn = db._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT key, value FROM config WHERE section = 'accounts' ORDER BY id")
+            raw = {r[0]: r[1] for r in cur.fetchall()}
+
+        prefix = f"account{index}"
+        app_id = raw.get(f"{prefix}_app_id", "")
+        if not app_id:
+            raise HTTPException(status_code=404, detail=f"Cuenta {index} no encontrada")
+
+        account = AccountConfig(
+            name=raw.get(f"{prefix}_name", ""),
+            app_id=app_id,
+            app_secret=raw.get(f"{prefix}_app_secret", ""),
+            base_url=raw.get(f"{prefix}_base_url", "https://api.apsystemsema.com:9282"),
+            systems=[],
+        )
+
+        from src.monitor.batch import discover_systems as _discover
+        systems, calls_used = _discover(account)
+
+        db.insert_discover_systems(index, account.name, systems)
+
+        db.log_api_call(account.name, None, "/patch/api/v2/systems", 200, 0)
+
+        return {"ok": True, "total": len(systems), "calls_used": calls_used, "systems": systems}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error descubriendo sistemas: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/api/accounts/{index}/systems")
+def get_discovered_systems(index: int):
+    db = _get_db()
+    try:
+        systems = db.get_discovered_systems(index)
+        return systems
+    finally:
+        db.close()
+
+
+@app.put("/api/accounts/{index}/systems")
+def update_monitored_systems(index: int, data: MonitoredSystemsData):
+    db = _get_db()
+    try:
+        db.update_monitored_systems(index, data.sids)
+        return {"ok": True, "monitored": len(data.sids)}
+    finally:
+        db.close()
+
+
+@app.post("/api/report/manual")
+def manual_report():
+    db = _get_db()
+    try:
+        from src.config import load_config
+        config = load_config()
+
+        report = {"accounts": [], "generated_at": datetime.now().isoformat(), "api_calls_used": 0}
+
+        for account in config.accounts:
+            if not account.app_id:
+                continue
+
+            account_report = {
+                "name": account.name,
+                "systems": [],
+                "summary": {"total": 0, "green": 0, "yellow": 0, "red": 0, "grey": 0},
+            }
+
+            try:
+                from src.api.client import ApsystemsClient, ApiAccount
+                client = ApsystemsClient(account=ApiAccount(
+                    app_id=account.app_id,
+                    app_secret=account.app_secret,
+                    base_url=account.base_url,
+                ))
+
+                batch_data = client.get_systems_batch(page=1, size=50)
+                report["api_calls_used"] += 1
+                all_systems = batch_data.get("data", [])
+
+                monitored_sids = set(account.systems)
+
+                for sys_data in all_systems:
+                    sid = sys_data.get("sid", "")
+                    if not sid or sid not in monitored_sids:
+                        continue
+
+                    system_report = {
+                        "sid": sid,
+                        "light": sys_data.get("light", 0),
+                        "ecu_list": sys_data.get("ecu", []),
+                        "capacity": sys_data.get("capacity", 0),
+                        "type": sys_data.get("type", 1),
+                        "timezone": sys_data.get("timezone", "UTC"),
+                        "details": None,
+                        "summary": None,
+                        "energy": None,
+                    }
+
+                    light = sys_data.get("light", 0)
+                    light_key = {1: "green", 2: "yellow", 3: "red", 4: "grey"}.get(light, "unknown")
+                    account_report["summary"]["total"] += 1
+                    if light_key in account_report["summary"]:
+                        account_report["summary"][light_key] += 1
+
+                    try:
+                        details = client.get_system_details(sid)
+                        report["api_calls_used"] += 1
+                        system_report["details"] = details.get("data", {})
+                    except Exception:
+                        pass
+
+                    try:
+                        summary = client.get_system_summary(sid)
+                        report["api_calls_used"] += 1
+                        system_report["summary"] = summary.get("data", {})
+                    except Exception:
+                        pass
+
+                    try:
+                        today = datetime.now().strftime("%Y-%m-%d")
+                        energy = client.get_inverter_batch_energy(sid, sys_data.get("ecu", [{}])[0].get("eid", "") if sys_data.get("ecu") else "", f"{today} {today}")
+                        report["api_calls_used"] += 1
+                        system_report["energy"] = energy.get("data", {})
+                    except Exception:
+                        pass
+
+                    account_report["systems"].append(system_report)
+
+            except Exception as e:
+                account_report["error"] = str(e)
+
+            report["accounts"].append(account_report)
+
+        return report
+    finally:
+        db.close()

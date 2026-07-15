@@ -67,3 +67,54 @@ def fetch_all_systems(account: AccountConfig) -> tuple[list[SystemInfo], int]:
         calls_used,
     )
     return systems, calls_used
+
+
+def discover_systems(account: AccountConfig) -> tuple[list[dict], int]:
+    client = ApsystemsClient(
+        account=ApiAccount(
+            app_id=account.app_id,
+            app_secret=account.app_secret,
+            base_url=account.base_url,
+        )
+    )
+
+    systems = []
+    calls_used = 0
+    page = 1
+    page_size = 50
+
+    while True:
+        try:
+            data = client.get_systems_batch(page=page, size=page_size)
+            calls_used += 1
+
+            items = data.get("data", [])
+            if not items:
+                break
+
+            for item in items:
+                sid = item.get("sid", "")
+                if sid:
+                    systems.append({
+                        "sid": sid,
+                        "light": item.get("light", 0),
+                        "ecu_list": item.get("ecu", []),
+                        "capacity": item.get("capacity", 0),
+                        "system_type": item.get("type", 1),
+                        "timezone": item.get("timezone", "UTC"),
+                    })
+
+            total = data.get("total", 0)
+            if page * page_size >= total:
+                break
+            page += 1
+
+        except ApsystemsApiError as e:
+            logger.error("API error discovering page %d: %s", page, e)
+            break
+        except Exception as e:
+            logger.error("Unexpected error discovering: %s", e)
+            break
+
+    logger.info("Cuenta %s: %d sistemas descubiertos en %d llamadas API", account.name, len(systems), calls_used)
+    return systems, calls_used

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Save, Server } from 'lucide-react'
+import { Plus, Trash2, Save, Server, Search } from 'lucide-react'
 import { api } from '../../api'
+import DescubrirSistemas from './DescubrirSistemas'
 
 export default function AccountsConfig() {
   const [accounts, setAccounts] = useState([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState('')
+  const [discoverAccount, setDiscoverAccount] = useState(null)
 
   const load = async () => {
     setLoading(true)
@@ -96,9 +98,14 @@ export default function AccountsConfig() {
                 <Server size={18} className="text-primary-600" />
                 <h3 className="font-semibold">Cuenta {idx + 1}: {acc.name || 'Sin nombre'}</h3>
               </div>
-              <button onClick={() => removeAccount(acc.index)} className="text-red-500 hover:text-red-700 p-1">
-                <Trash2 size={16} />
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => setDiscoverAccount({ index: acc.index, name: acc.name })} className="btn-secondary text-sm flex items-center gap-1">
+                  <Search size={14} /> Descubrir sistemas
+                </button>
+                <button onClick={() => removeAccount(acc.index)} className="text-red-500 hover:text-red-700 p-1">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -117,14 +124,18 @@ export default function AccountsConfig() {
                 <label className="label">Base URL</label>
                 <input value={acc.base_url} onChange={(e) => updateField(idx, 'base_url', e.target.value)} className="input" />
               </div>
-              <div className="col-span-2">
-                <label className="label">SIDs (separados por coma)</label>
-                <input value={acc.systems} onChange={(e) => updateField(idx, 'systems', e.target.value)} className="input" placeholder="SID001, SID002, SID003" />
-              </div>
             </div>
           </div>
         ))}
       </div>
+
+      {discoverAccount && (
+        <DescubrirSistemas
+          accountIndex={discoverAccount.index}
+          accountName={discoverAccount.name}
+          onClose={() => setDiscoverAccount(null)}
+        />
+      )}
     </div>
   )
 }

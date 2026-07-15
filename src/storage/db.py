@@ -184,3 +184,65 @@ class Database:
             deleted = cur.rowcount
             if deleted > 0:
                 logger.info("Eliminados %d registros de API calls antiguos", deleted)
+
+    def run_migrations(self):
+        sql = """
+            CREATE TABLE IF NOT EXISTS sistemas_disponibles (
+                id SERIAL PRIMARY KEY,
+                account_index INT NOT NULL,
+                sid TEXT NOT NULL,
+                account_name TEXT DEFAULT '',
+                ecu_list JSONB DEFAULT '[]',
+                capacity FLOAT DEFAULT 0,
+                system_type INT DEFAULT 1,
+                timezone TEXT DEFAULT 'UTC',
+                light INT DEFAULT 0,
+                monitorear BOOLEAN DEFAULT false,
+                discovered_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(account_index, sid)
+            )
+        """
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sistemas_disponibles_account ON sistemas_disponibles(account_index)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_sistemas_disponibles_monitorear ON sistemas_disponibles(monitorear)")
+        logger.info("Migraciones ejecutadas correctamente")
+
+    def insert_discover_systems(self, account_index: int, account_name: str, systems: list[dict]):
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            for s in systems:
+                cur.execute("""
+                    INSERT INTO sistemas_disponibles (account_index, sid, account_name, ecu_list, capacity, system_type, timezone, light, monitorear)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false)
+                    ON CONFLICT (account_index, sid) DO UPDATE SET
+                        account_name = EXCLUDED.account_name,
+                        ecu_list = EXCLUDED.ecu_list,
+                        capacity = EXCLUDED.capacity,
+                        system_type = EXCLUDED.system_type,
+                        timezone = EXCLUDED.timezone,
+                        light = EXCLUDED.light,
+                        discovered_at = NOW()
+                """, (account_index, s["sid"], account_name, json.dumps(s.get("ecu_list", [])), s.get("capacity", 0), s.get("system_type", 1), s.get("timezone", "UTC"), s.get("light", 0)))
+
+    def get_discovered_systems(self, account_index: int) -> list[dict]:
+        sql = "SELECT id, sid, account_name, ecu_list, capacity, system_type, timezone, light, monitorear, discovered_at FROM sistemas_disponibles WHERE account_index = %s ORDER BY sid"
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(sql, (account_index,))
+            return [{"id": r[0], "sid": r[1], "account_name": r[2], "ecu_list": json.loads(r[3]) if r[3] else [], "capacity": r[4], "system_type": r[5], "timezone": r[6], "light": r[7], "monitorear": r[8], "discovered_at": r[9].isoformat() if r[9] else None} for r in cur.fetchall()]
+
+    def update_monitored_systems(self, account_index: int, sids: list[str]):
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("UPDATE sistemas_disponibles SET monitorear = false WHERE account_index = %s", (account_index,))
+            for sid in sids:
+                cur.execute("UPDATE sistemas_disponibles SET monitorear = true WHERE account_index = %s AND sid = %s", (account_index, sid))
+
+    def get_monitored_sids(self, account_index: int) -> list[str]:
+        sql = "SELECT sid FROM sistemas_disponibles WHERE account_index = %s AND monitorear = true ORDER BY sid"
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute(sql, (account_index,))
+            return [r[0] for r in cur.fetchall()]

@@ -106,13 +106,17 @@ def _load_config_from_db():
             app_id = raw.get(f"{prefix}_app_id", "")
             if not app_id:
                 break
+            with conn.cursor() as cur:
+                cur.execute("SELECT sid FROM sistemas_disponibles WHERE account_index = %s AND monitorear = true", (idx,))
+                systems = [r[0] for r in cur.fetchall()]
             accounts.append(AccountConfig(
                 name=raw.get(f"{prefix}_name", f"Account{idx}"),
                 app_id=app_id,
                 app_secret=raw.get(f"{prefix}_app_secret", ""),
                 base_url=raw.get(f"{prefix}_base_url", "https://api.apsystemsema.com:9282"),
-                systems=[s.strip() for s in raw.get(f"{prefix}_systems", "").split(",") if s.strip()],
+                systems=systems,
             ))
+            logger.info("Cuenta cargada (DB): %s (%d sistemas monitoreados)", raw.get(f"{prefix}_name", ""), len(systems))
             idx += 1
 
         with conn.cursor() as cur:
