@@ -34,6 +34,7 @@ class ApsystemsClient:
         self.account = account
         self._session = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
+        self._mode = None  # "patch" or "user"
 
     def _build_signature(self, path: str, method: str) -> dict[str, str]:
         ts = str(int(time.time() * 1000))
@@ -93,9 +94,27 @@ class ApsystemsClient:
         )
         return data
 
+    def _request_with_fallback(
+        self, patch_path: str, user_path: str, method: str = "GET", params: dict | None = None
+    ) -> dict[str, Any]:
+        if self._mode == "user":
+            return self._request(user_path, method, params)
+        if self._mode == "patch":
+            return self._request(patch_path, method, params)
+
+        try:
+            return self._request(patch_path, method, params)
+        except Exception as e:
+            if "404" in str(e) or "Not Found" in str(e):
+                logger.info("Patch mode no disponible, intentando End User mode: %s", user_path)
+                self._mode = "user"
+                return self._request(user_path, method, params)
+            raise
+
     def get_systems_batch(self, page: int = 1, size: int = 50) -> dict[str, Any]:
-        return self._request(
+        return self._request_with_fallback(
             "/patch/api/v2/systems",
+            "/user/api/v2/systems",
             method="POST",
             params={"page": page, "size": size},
         )
