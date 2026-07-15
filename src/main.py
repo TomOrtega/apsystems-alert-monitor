@@ -2,15 +2,18 @@ import os
 import time
 import logging
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 
 import schedule
+import uvicorn
 
 from src.config import load_config
 from src.storage.db import Database
 from src.monitor.checker import run_check
 from src.notify.email_sender import EmailSender
+from src.notify.telegram_sender import TelegramSender
 from src.api.models import LightStatus
 
 LOG_DIR = Path("/app/logs")
@@ -40,35 +43,57 @@ def run_monitor_job():
         alertas = run_check(config.accounts, db)
 
         if alertas:
-            sender = EmailSender(config.smtp)
-            for alerta in alertas:
+            if config.smtp.enabled and config.smtp.user:
                 try:
-                    sender.send_alert(alerta)
-                    if alerta.id is not None:
-                        db.mark_email_sent(alerta.id)
-                    logger.info("Alerta enviada por email: %s", alerta.sid)
+                    sender = EmailSender(config.smtp)
+                    for alerta in alertas:
+                        try:
+                            sender.send_alert(alerta)
+                            if alerta.id is not None:
+                                db.mark_email_sent(alerta.id)
+                            logger.info("Alerta enviada por email: %s", alerta.sid)
+                        except Exception as e:
+                            logger.error("Error enviando email para %s: %s", alerta.sid, e)
                 except Exception as e:
-                    logger.error("Error enviando email para %s: %s", alerta.sid, e)
+                    logger.error("Error inicializando email sender: %s", e)
+            else:
+                logger.info("Email deshabilitado, saltando envio")
+
+            if config.telegram.enabled and config.telegram.bot_token:
+                try:
+                    tg = TelegramSender(config.telegram.bot_token, config.telegram.chat_id)
+                    for alerta in alertas:
+                        tg.send_alert(alerta)
+                    logger.info("Alertas enviadas por Telegram: %d", len(alertas))
+                except Exception as e:
+                    logger.error("Error enviando Telegram: %s", e)
+            else:
+                logger.info("Telegram deshabilitado, saltando envio")
 
         api_usage = []
         for account in config.accounts:
             used = db.get_calls_this_month(account.name)
             remaining = max(0, 1000 - used)
-            api_usage.append({
-                "name": account.name,
-                "used": used,
-                "remaining": remaining,
-            })
+            api_usage.append({"name": account.name, "used": used, "remaining": remaining})
 
         accounts_summary = _build_accounts_summary(alertas, config)
 
         if accounts_summary:
-            try:
-                sender = EmailSender(config.smtp)
-                sender.send_daily_report(accounts_summary, api_usage)
-                logger.info("Reporte diario enviado por email")
-            except Exception as e:
-                logger.error("Error enviando reporte diario: %s", e)
+            if config.smtp.enabled and config.smtp.user:
+                try:
+                    sender = EmailSender(config.smtp)
+                    sender.send_daily_report(accounts_summary, api_usage)
+                    logger.info("Reporte diario enviado por email")
+                except Exception as e:
+                    logger.error("Error enviando reporte diario: %s", e)
+
+            if config.telegram.enabled and config.telegram.bot_token:
+                try:
+                    tg = TelegramSender(config.telegram.bot_token, config.telegram.chat_id)
+                    tg.send_daily_report(accounts_summary, api_usage)
+                    logger.info("Reporte diario enviado por Telegram")
+                except Exception as e:
+                    logger.error("Error enviando reporte Telegram: %s", e)
 
         db.cleanup_old_alertas(config.alert_retention_days)
         db.cleanup_old_api_calls(config.alert_retention_days)
@@ -86,31 +111,19 @@ def run_monitor_job():
 
 def _build_accounts_summary(alertas, config) -> list[dict]:
     summaries = []
-    today = datetime.now().strftime("%Y-%m-%d")
-
     for account in config.accounts:
         account_alertas = [
-            {
-                "sid": a.sid,
-                "severidad": a.severidad,
-                "mensaje": a.mensaje,
-                "light_color": _light_color(a.light_nuevo),
-            }
+            {"sid": a.sid, "severidad": a.severidad, "mensaje": a.mensaje, "light_color": _light_color(a.light_nuevo)}
             for a in alertas
             if a.account_name == account.name
         ]
-
         summaries.append({
             "name": account.name,
             "total": len(account.systems),
-            "green": 0,
-            "yellow": 0,
-            "red": 0,
-            "grey": 0,
+            "green": 0, "yellow": 0, "red": 0, "grey": 0,
             "alertas": account_alertas,
             "api_calls": 0,
         })
-
     return summaries
 
 
@@ -123,6 +136,18 @@ def _light_color(light: int | None) -> str:
         return "unknown"
 
 
+def start_api_server():
+    config = load_config()
+    db = config.db
+    os.environ["DB_HOST"] = db.host
+    os.environ["DB_PORT"] = str(db.port)
+    os.environ["DB_USER"] = db.user
+    os.environ["DB_PASSWORD"] = db.password
+    os.environ["DB_NAME"] = db.name
+
+    uvicorn.run("src.api_server:app", host="0.0.0.0", port=8000, log_level="info")
+
+
 def main():
     config = load_config()
 
@@ -131,6 +156,12 @@ def main():
     for account in config.accounts:
         logger.info("  - %s: %d sistemas", account.name, len(account.systems))
     logger.info("Intervalo de verificacion: cada %d horas", config.check_interval_hours)
+    logger.info("Email habilitado: %s", config.smtp.enabled)
+    logger.info("Telegram habilitado: %s", config.telegram.enabled)
+
+    api_thread = threading.Thread(target=start_api_server, daemon=True)
+    api_thread.start()
+    logger.info("API server iniciado en puerto 8000")
 
     logger.info("Ejecutando verificacion inicial...")
     run_monitor_job()
