@@ -105,8 +105,9 @@ class ApsystemsClient:
         try:
             return self._request(patch_path, method, params)
         except Exception as e:
-            if "404" in str(e) or "Not Found" in str(e):
-                logger.info("Patch mode no disponible, intentando End User mode: %s", user_path)
+            error_str = str(e).lower()
+            if "404" in error_str or "not found" in error_str or "500" in error_str:
+                logger.info("Patch mode no disponible (%s), intentando End User mode: %s", e, user_path)
                 self._mode = "user"
                 return self._request(user_path, method, params)
             raise
