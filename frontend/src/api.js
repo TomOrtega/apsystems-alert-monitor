@@ -52,6 +52,8 @@ export const api = {
   discoverSystems: (index) => request(`/api/accounts/${index}/discover`, { method: 'POST' }),
   getDiscoveredSystems: (index) => request(`/api/accounts/${index}/systems`),
   updateMonitoredSystems: (index, sids) => request(`/api/accounts/${index}/systems`, { method: 'PUT', body: JSON.stringify({ sids }) }),
+  addSystemManually: (index, sid, accountName) => request(`/api/accounts/${index}/systems/add`, { method: 'POST', body: JSON.stringify({ sid, account_name: accountName }) }),
+  triggerCheck: () => request('/api/check', { method: 'POST' }),
   manualReport: () => request('/api/report/manual', { method: 'POST' }),
   triggerCheck: () => request('/api/check', { method: 'POST' }),
   logs: (lines = 100) => request(`/api/logs?lines=${lines}`),

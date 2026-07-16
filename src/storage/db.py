@@ -215,7 +215,7 @@ class Database:
             for s in systems:
                 cur.execute("""
                     INSERT INTO sistemas_disponibles (account_index, sid, account_name, ecu_list, capacity, system_type, timezone, light, monitorear)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, false)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, true)
                     ON CONFLICT (account_index, sid) DO UPDATE SET
                         account_name = EXCLUDED.account_name,
                         ecu_list = EXCLUDED.ecu_list,
@@ -223,6 +223,7 @@ class Database:
                         system_type = EXCLUDED.system_type,
                         timezone = EXCLUDED.timezone,
                         light = EXCLUDED.light,
+                        monitorear = true,
                         discovered_at = NOW()
                 """, (account_index, s["sid"], account_name, json.dumps(s.get("ecu_list", [])), s.get("capacity", 0), s.get("system_type", 1), s.get("timezone", "UTC"), s.get("light", 0)))
 
@@ -231,7 +232,14 @@ class Database:
         conn = self._get_conn()
         with conn.cursor() as cur:
             cur.execute(sql, (account_index,))
-            return [{"id": r[0], "sid": r[1], "account_name": r[2], "ecu_list": json.loads(r[3]) if r[3] else [], "capacity": r[4], "system_type": r[5], "timezone": r[6], "light": r[7], "monitorear": r[8], "discovered_at": r[9].isoformat() if r[9] else None} for r in cur.fetchall()]
+            def _parse_ecu(val):
+                if not val:
+                    return []
+                if isinstance(val, (list, dict)):
+                    return val
+                return json.loads(val)
+
+            return [{"id": r[0], "sid": r[1], "account_name": r[2], "ecu_list": _parse_ecu(r[3]), "capacity": r[4], "system_type": r[5], "timezone": r[6], "light": r[7], "monitorear": r[8], "discovered_at": r[9].isoformat() if r[9] else None} for r in cur.fetchall()]
 
     def update_monitored_systems(self, account_index: int, sids: list[str]):
         conn = self._get_conn()

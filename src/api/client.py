@@ -31,7 +31,11 @@ class ApsystemsApiError(Exception):
 
 class ApsystemsClient:
     def __init__(self, account: ApiAccount):
-        self.account = account
+        self.account = ApiAccount(
+            app_id=account.app_id.strip(),
+            app_secret=account.app_secret.strip(),
+            base_url=account.base_url.strip(),
+        )
         self._session = requests.Session()
 
     def _build_signature(self, path: str, method: str) -> dict[str, str]:
@@ -94,12 +98,14 @@ class ApsystemsClient:
         return data
 
     def get_systems_batch(self, page: int = 1, size: int = 50) -> dict[str, Any]:
-        """List all systems via Installer API (POST, no body).
+        """List all systems via Installer API (POST with query params).
         Returns: {"total": N, "size": N, "systems": [...]}
         """
         resp = self._request(
             "/installer/api/v2/systems",
             method="POST",
+            body={},
+            params={"page": str(page), "size": str(size)},
         )
         return resp.get("data", resp)
 

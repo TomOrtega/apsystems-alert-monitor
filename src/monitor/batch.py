@@ -79,22 +79,24 @@ def discover_systems(account: AccountConfig) -> tuple[list[dict], int]:
     )
 
     systems = []
+    seen_sids = set()
     calls_used = 0
     page = 1
     page_size = 50
+    total = 0
 
-    while True:
-        try:
+    try:
+        while True:
             data = client.get_systems_batch(page=page, size=page_size)
             calls_used += 1
 
-            items = data.get("systems", data.get("data", []))
-            if not items:
-                break
+            items = data.get("systems", [])
+            total = data.get("total", 0)
 
             for item in items:
                 sid = item.get("sid", "")
-                if sid:
+                if sid and sid not in seen_sids:
+                    seen_sids.add(sid)
                     systems.append({
                         "sid": sid,
                         "light": item.get("light", 0),
@@ -105,17 +107,23 @@ def discover_systems(account: AccountConfig) -> tuple[list[dict], int]:
                         "username": item.get("username", ""),
                     })
 
-            total = data.get("total", 0)
-            if page * page_size >= total:
+            logger.info(
+                "Cuenta %s: pagina %d -> %d sistemas (total=%d/%d)",
+                account.name, page, len(items), len(systems), total,
+            )
+
+            if len(seen_sids) >= total or len(items) == 0:
                 break
             page += 1
 
-        except ApsystemsApiError as e:
-            logger.error("API error discovering page %d: %s", page, e)
-            break
-        except Exception as e:
-            logger.error("Unexpected error discovering: %s", e)
-            break
+        logger.info(
+            "Cuenta %s: %d sistemas unicos descubiertos en %d llamadas API",
+            account.name, len(systems), calls_used,
+        )
 
-    logger.info("Cuenta %s: %d sistemas descubiertos en %d llamadas API", account.name, len(systems), calls_used)
+    except ApsystemsApiError as e:
+        logger.error("API error discovering systems: %s", e)
+    except Exception as e:
+        logger.error("Unexpected error discovering: %s", e)
+
     return systems, calls_used

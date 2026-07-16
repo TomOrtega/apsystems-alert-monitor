@@ -672,6 +672,44 @@ def update_monitored_systems(index: int, data: MonitoredSystemsData):
         db.close()
 
 
+class AddSidData(BaseModel):
+    sid: str
+    account_name: str = ""
+
+
+@app.post("/api/accounts/{index}/systems/add")
+def add_system_manually(index: int, data: AddSidData):
+    db = _get_db()
+    try:
+        sid = data.sid.strip()
+        if not sid:
+            raise HTTPException(status_code=400, detail="SID vacio")
+        db.insert_discover_systems(index, data.account_name or f"Account {index}", [{"sid": sid, "ecu_list": [], "capacity": 0, "system_type": 1, "timezone": "UTC", "light": 0}])
+        return {"ok": True, "sid": sid}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding SID: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.post("/api/check")
+def trigger_check():
+    try:
+        from src.config import load_config
+        from src.monitor.checker import run_check
+        config = load_config()
+        db = _get_db()
+        try:
+            alertas = run_check(config.accounts, db)
+            return {"ok": True, "alertas_generadas": len(alertas)}
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en check: {str(e)}")
+
+
 @app.post("/api/report/manual")
 def manual_report():
     db = _get_db()
