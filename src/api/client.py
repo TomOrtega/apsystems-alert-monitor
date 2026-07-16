@@ -62,7 +62,7 @@ class ApsystemsClient:
         }
 
     def _request(
-        self, path: str, method: str = "GET", params: dict | None = None
+        self, path: str, method: str = "GET", params: dict | None = None, body: dict | None = None
     ) -> dict[str, Any]:
         url = self.account.base_url + path
         headers = self._build_signature(path, method)
@@ -70,7 +70,9 @@ class ApsystemsClient:
         start = time.time()
         try:
             resp = self._session.request(
-                method=method, url=url, headers=headers, params=params, timeout=30
+                method=method, url=url, headers=headers, params=params,
+                json=body if body else None,
+                timeout=30,
             )
             elapsed_ms = int((time.time() - start) * 1000)
 
@@ -95,28 +97,27 @@ class ApsystemsClient:
         return data
 
     def _request_with_fallback(
-        self, patch_path: str, user_path: str, method: str = "GET", params: dict | None = None
+        self, installer_path: str, user_path: str, method: str = "GET", params: dict | None = None
     ) -> dict[str, Any]:
         if self._mode == "user":
             return self._request(user_path, method, params)
-        if self._mode == "patch":
-            return self._request(patch_path, method, params)
+        if self._mode == "installer":
+            return self._request(installer_path, method, params)
 
         try:
-            return self._request(patch_path, method, params)
+            return self._request(installer_path, method, params)
         except Exception as e:
             error_str = str(e).lower()
-            if "404" in error_str or "not found" in error_str or "500" in error_str:
-                logger.info("Patch mode no disponible (%s), intentando End User mode: %s", e, user_path)
+            if any(x in error_str for x in ("404", "not found", "500", "internal server", "no permission")):
+                logger.info("Installer mode no disponible (%s), intentando End User mode: %s", e, user_path)
                 self._mode = "user"
                 return self._request(user_path, method, params)
             raise
 
     def get_systems_batch(self, page: int = 1, size: int = 50) -> dict[str, Any]:
         return self._request_with_fallback(
-            "/patch/api/v2/systems",
+            "/installer/api/v2/systems",
             "/user/api/v2/systems",
-            method="POST",
             params={"page": page, "size": size},
         )
 
