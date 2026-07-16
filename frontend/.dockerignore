@@ -1,0 +1,7 @@
+node_modules
+.git
+test_*.py
+__pycache__
+*.pyc
+.env
+frontend/node_modules

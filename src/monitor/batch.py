@@ -29,7 +29,7 @@ def fetch_all_systems(account: AccountConfig) -> tuple[list[SystemInfo], int]:
             elapsed_ms = int((time.time() - start) * 1000)
             calls_used += 1
 
-            items = data.get("data", [])
+            items = data.get("systems", data.get("data", []))
             if not items:
                 break
 
@@ -88,7 +88,7 @@ def discover_systems(account: AccountConfig) -> tuple[list[dict], int]:
             data = client.get_systems_batch(page=page, size=page_size)
             calls_used += 1
 
-            items = data.get("data", [])
+            items = data.get("systems", data.get("data", []))
             if not items:
                 break
 
@@ -102,6 +102,7 @@ def discover_systems(account: AccountConfig) -> tuple[list[dict], int]:
                         "capacity": item.get("capacity", 0),
                         "system_type": item.get("type", 1),
                         "timezone": item.get("timezone", "UTC"),
+                        "username": item.get("username", ""),
                     })
 
             total = data.get("total", 0)

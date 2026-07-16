@@ -518,7 +518,15 @@ def test_account_api(index: int):
         try:
             data = client.get_systems_batch(page=1, size=1)
             total = data.get("total", 0)
-            return {"ok": True, "message": f"Autenticacion exitosa. {total} sistemas encontrados en la cuenta.", "total_systems": total}
+            systems = data.get("systems", data.get("data", []))
+            sample = systems[0] if systems else {}
+            return {
+                "ok": True,
+                "message": f"Autenticacion exitosa. {total} sistemas encontrados en la cuenta.",
+                "total_systems": total,
+                "sample_sid": sample.get("sid", ""),
+                "sample_capacity": sample.get("capacity", ""),
+            }
         except Exception as e:
             error_msg = str(e)
             if "401" in error_msg or "Unauthorized" in error_msg:
@@ -633,7 +641,7 @@ def discover_systems(index: int):
 
         db.insert_discover_systems(index, account.name, systems)
 
-        db.log_api_call(account.name, None, "/patch/api/v2/systems", 200, 0)
+        db.log_api_call(account.name, None, "/installer/api/v2/systems", 200, 0)
 
         return {"ok": True, "total": len(systems), "calls_used": calls_used, "systems": systems}
     except HTTPException:
@@ -693,7 +701,7 @@ def manual_report():
 
                 batch_data = client.get_systems_batch(page=1, size=50)
                 report["api_calls_used"] += 1
-                all_systems = batch_data.get("data", [])
+                all_systems = batch_data.get("systems", batch_data.get("data", []))
 
                 monitored_sids = set(account.systems)
 
@@ -736,9 +744,13 @@ def manual_report():
 
                     try:
                         today = datetime.now().strftime("%Y-%m-%d")
-                        energy = client.get_inverter_batch_energy(sid, sys_data.get("ecu", [{}])[0].get("eid", "") if sys_data.get("ecu") else "", f"{today} {today}")
-                        report["api_calls_used"] += 1
-                        system_report["energy"] = energy.get("data", {})
+                        yesterday = (datetime.now() - __import__('datetime').timedelta(days=1)).strftime("%Y-%m-%d")
+                        ecu_list = sys_data.get("ecu", [])
+                        eid = ecu_list[0] if ecu_list else ""
+                        if eid:
+                            energy = client.get_inverter_batch_energy(sid, eid, f"{yesterday} {today}")
+                            report["api_calls_used"] += 1
+                            system_report["energy"] = energy.get("data", {})
                     except Exception:
                         pass
 
