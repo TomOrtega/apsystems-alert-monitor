@@ -146,3 +146,9 @@ class ApsystemsClient:
             f"/installer/api/v2/systems/{sid}/devices/inverter/energy/{uid}",
             params={"energy_level": energy_level, "date_range": date_range},
         )
+
+    def get_system_meters(self, sid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/meters/{sid}")
+
+    def get_system_storages(self, sid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/storages/{sid}")

@@ -186,27 +186,69 @@ class Database:
                 logger.info("Eliminados %d registros de API calls antiguos", deleted)
 
     def run_migrations(self):
-        sql = """
-            CREATE TABLE IF NOT EXISTS sistemas_disponibles (
-                id SERIAL PRIMARY KEY,
-                account_index INT NOT NULL,
-                sid TEXT NOT NULL,
-                account_name TEXT DEFAULT '',
-                ecu_list JSONB DEFAULT '[]',
-                capacity FLOAT DEFAULT 0,
-                system_type INT DEFAULT 1,
-                timezone TEXT DEFAULT 'UTC',
-                light INT DEFAULT 0,
-                monitorear BOOLEAN DEFAULT false,
-                discovered_at TIMESTAMP DEFAULT NOW(),
-                UNIQUE(account_index, sid)
-            )
-        """
         conn = self._get_conn()
         with conn.cursor() as cur:
-            cur.execute(sql)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS sistemas_disponibles (
+                    id SERIAL PRIMARY KEY,
+                    account_index INT NOT NULL,
+                    sid TEXT NOT NULL,
+                    account_name TEXT DEFAULT '',
+                    ecu_list JSONB DEFAULT '[]',
+                    capacity FLOAT DEFAULT 0,
+                    system_type INT DEFAULT 1,
+                    timezone TEXT DEFAULT 'UTC',
+                    light INT DEFAULT 0,
+                    monitorear BOOLEAN DEFAULT false,
+                    discovered_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(account_index, sid)
+                )
+            """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_sistemas_disponibles_account ON sistemas_disponibles(account_index)")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_sistemas_disponibles_monitorear ON sistemas_disponibles(monitorear)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS ecus (
+                    eid TEXT PRIMARY KEY,
+                    sid TEXT NOT NULL,
+                    ecu_type INT DEFAULT 0,
+                    model TEXT,
+                    capacity_kwh FLOAT,
+                    timezone TEXT,
+                    has_meter BOOLEAN DEFAULT false,
+                    has_storage BOOLEAN DEFAULT false,
+                    inventory_updated_at TIMESTAMP DEFAULT NOW(),
+                    UNIQUE(eid, sid)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_ecus_sid ON ecus(sid)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS microinversores (
+                    uid TEXT PRIMARY KEY,
+                    eid TEXT NOT NULL,
+                    sid TEXT NOT NULL,
+                    inverter_model TEXT,
+                    expected_channels INT DEFAULT 4,
+                    inventory_updated_at TIMESTAMP DEFAULT NOW()
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_microinversores_sid ON microinversores(sid)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_microinversores_eid ON microinversores(eid)")
+
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS canales_inversor (
+                    id SERIAL PRIMARY KEY,
+                    uid TEXT NOT NULL,
+                    channel_number INT NOT NULL CHECK (channel_number BETWEEN 1 AND 4),
+                    connected BOOLEAN DEFAULT true,
+                    module_model TEXT,
+                    module_power_w INT,
+                    UNIQUE(uid, channel_number)
+                )
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_canales_uid ON canales_inversor(uid)")
+
         logger.info("Migraciones ejecutadas correctamente")
 
     def insert_discover_systems(self, account_index: int, account_name: str, systems: list[dict]):
@@ -254,3 +296,102 @@ class Database:
         with conn.cursor() as cur:
             cur.execute(sql, (account_index,))
             return [r[0] for r in cur.fetchall()]
+
+    def upsert_inventory(self, sid: str, details: dict, inverters_data: list, meters_data: list, storages_data):
+        conn = self._get_conn()
+        ecu_ids_in_details = details.get("ecu", [])
+
+        has_meter = False
+        meter_eids = set()
+        if isinstance(meters_data, list):
+            meter_eids = set(meters_data)
+            has_meter = len(meter_eids) > 0
+
+        has_storage = False
+        storage_eids = set()
+        if isinstance(storages_data, list):
+            storage_eids = set(storages_data)
+            has_storage = len(storage_eids) > 0
+
+        with conn.cursor() as cur:
+            for ecu in inverters_data:
+                eid = ecu.get("eid", "")
+                ecu_type = ecu.get("type", 0)
+                model = ecu.get("model")
+                capacity_kwh = ecu.get("capacity")
+                tz = ecu.get("timezone", details.get("timezone", "UTC"))
+                ecu_has_meter = eid in meter_eids
+                ecu_has_storage = eid in storage_eids
+
+                cur.execute("""
+                    INSERT INTO ecus (eid, sid, ecu_type, model, capacity_kwh, timezone, has_meter, has_storage, inventory_updated_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (eid, sid) DO UPDATE SET
+                        ecu_type = EXCLUDED.ecu_type,
+                        model = EXCLUDED.model,
+                        capacity_kwh = EXCLUDED.capacity_kwh,
+                        timezone = EXCLUDED.timezone,
+                        has_meter = EXCLUDED.has_meter,
+                        has_storage = EXCLUDED.has_storage,
+                        inventory_updated_at = NOW()
+                """, (eid, sid, ecu_type, model, capacity_kwh, tz, ecu_has_meter, ecu_has_storage))
+
+                for inv in ecu.get("inverter", []):
+                    uid = inv.get("uid", "")
+                    inv_model = inv.get("type", "")
+
+                    cur.execute("""
+                        INSERT INTO microinversores (uid, eid, sid, inverter_model, inventory_updated_at)
+                        VALUES (%s, %s, %s, %s, NOW())
+                        ON CONFLICT (uid) DO UPDATE SET
+                            eid = EXCLUDED.eid,
+                            sid = EXCLUDED.sid,
+                            inverter_model = EXCLUDED.inverter_model,
+                            inventory_updated_at = NOW()
+                    """, (uid, eid, sid, inv_model))
+
+                    for ch in range(1, 5):
+                        cur.execute("""
+                            INSERT INTO canales_inversor (uid, channel_number, connected)
+                            VALUES (%s, %s, true)
+                            ON CONFLICT (uid, channel_number) DO UPDATE SET connected = true
+                        """, (uid, ch))
+
+    def get_inventory_summary(self, sid: str) -> dict:
+        conn = self._get_conn()
+        result = {"sid": sid, "ecus": [], "total_inverters": 0, "total_channels": 0}
+
+        with conn.cursor() as cur:
+            cur.execute("SELECT eid, ecu_type, model, capacity_kwh, timezone, has_meter, has_storage FROM ecus WHERE sid = %s", (sid,))
+            ecus = cur.fetchall()
+            for ecu in ecus:
+                eid, etype, model, cap, tz, hm, hs = ecu
+                cur.execute("SELECT uid, inverter_model FROM microinversores WHERE eid = %s AND sid = %s", (eid, sid))
+                inverters = cur.fetchall()
+                inv_list = []
+                for uid, imodel in inverters:
+                    cur.execute("SELECT channel_number, connected FROM canales_inversor WHERE uid = %s ORDER BY channel_number", (uid,))
+                    channels = cur.fetchall()
+                    inv_list.append({"uid": uid, "model": imodel, "channels": [{"number": c[0], "connected": c[1]} for c in channels]})
+                result["ecus"].append({
+                    "eid": eid, "type": etype, "model": model, "capacity_kwh": cap,
+                    "timezone": tz, "has_meter": hm, "has_storage": hs,
+                    "inverters": inv_list,
+                })
+                result["total_inverters"] += len(inv_list)
+                result["total_channels"] += sum(len(inv["channels"]) for inv in inv_list)
+
+        return result
+
+    def get_inventory_stats(self) -> dict:
+        conn = self._get_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM ecus")
+            ecu_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM microinversores")
+            inv_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(*) FROM canales_inversor WHERE connected = true")
+            ch_count = cur.fetchone()[0]
+            cur.execute("SELECT COUNT(DISTINCT sid) FROM ecus")
+            sys_count = cur.fetchone()[0]
+        return {"sistemas": sys_count, "ecus": ecu_count, "microinversores": inv_count, "canales": ch_count}
