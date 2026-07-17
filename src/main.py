@@ -12,6 +12,7 @@ import uvicorn
 from src.config import load_config
 from src.storage.db import Database
 from src.monitor.checker import run_check
+from src.monitor.collector import collect_and_write
 from src.notify.email_sender import EmailSender
 from src.notify.telegram_sender import TelegramSender
 from src.api.models import LightStatus
@@ -98,9 +99,13 @@ def run_monitor_job():
         db.cleanup_old_alertas(config.alert_retention_days)
         db.cleanup_old_api_calls(config.alert_retention_days)
 
+        collect_stats = collect_and_write(config.accounts, config.influx, db)
+
         elapsed = time.time() - start_time
         logger.info("Verificacion completada en %.1f segundos", elapsed)
         logger.info("Uso API: %s", api_usage)
+        logger.info("InfluxDB recoleccion: %d sistemas, %d llamadas, %d errores",
+                     collect_stats["systems_collected"], collect_stats["calls_used"], collect_stats["errors"])
         logger.info("=" * 60)
 
         db.close()

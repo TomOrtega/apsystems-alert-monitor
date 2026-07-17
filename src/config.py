@@ -52,11 +52,21 @@ class DbConfig:
 
 
 @dataclass
+class InfluxConfig:
+    url: str
+    token: str
+    org: str
+    bucket: str
+    enabled: bool = True
+
+
+@dataclass
 class AppConfig:
     accounts: list[AccountConfig]
     smtp: SmtpConfig
     telegram: TelegramConfig
     db: DbConfig
+    influx: InfluxConfig
     check_interval_hours: int
     alert_retention_days: int
 
@@ -149,6 +159,14 @@ def _load_config_from_db():
 
         db.close()
 
+        influx = InfluxConfig(
+            url=os.getenv("INFLUX_URL", "http://influxdb:8086"),
+            token=os.getenv("INFLUX_TOKEN", ""),
+            org=os.getenv("INFLUX_ORG", "apsystems"),
+            bucket=os.getenv("INFLUX_BUCKET", "solar_metrics"),
+            enabled=bool(os.getenv("INFLUX_TOKEN", "")),
+        )
+
         return AppConfig(
             accounts=accounts,
             smtp=smtp,
@@ -160,6 +178,7 @@ def _load_config_from_db():
                 password=os.getenv("DB_PASSWORD", "changeme"),
                 name=os.getenv("DB_NAME", "apsystems_monitor"),
             ),
+            influx=influx,
             check_interval_hours=int(sched_raw.get("check_interval_hours", "24")),
             alert_retention_days=int(sched_raw.get("alert_retention_days", "90")),
         )
@@ -189,6 +208,14 @@ def load_config() -> AppConfig:
         chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
         enabled=os.getenv("ENABLE_TELEGRAM", "false").lower() == "true",
     )
+    influx = InfluxConfig(
+        url=os.getenv("INFLUX_URL", "http://influxdb:8086"),
+        token=os.getenv("INFLUX_TOKEN", ""),
+        org=os.getenv("INFLUX_ORG", "apsystems"),
+        bucket=os.getenv("INFLUX_BUCKET", "solar_metrics"),
+        enabled=bool(os.getenv("INFLUX_TOKEN", "")),
+    )
+
     return AppConfig(
         accounts=accounts,
         smtp=smtp,
@@ -200,6 +227,7 @@ def load_config() -> AppConfig:
             password=os.getenv("DB_PASSWORD", "changeme"),
             name=os.getenv("DB_NAME", "apsystems_monitor"),
         ),
+        influx=influx,
         check_interval_hours=int(os.getenv("CHECK_INTERVAL_HOURS", "24")),
         alert_retention_days=int(os.getenv("ALERT_RETENTION_DAYS", "90")),
     )

@@ -152,3 +152,27 @@ class ApsystemsClient:
 
     def get_system_storages(self, sid: str) -> dict[str, Any]:
         return self._request(f"/installer/api/v2/systems/storages/{sid}")
+
+    def get_meter_summary(self, sid: str, eid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/{sid}/devices/meter/summary/{eid}")
+
+    def get_meter_period(self, sid: str, eid: str, energy_level: str, date_range: str) -> dict[str, Any]:
+        return self._request(
+            f"/installer/api/v2/systems/{sid}/devices/meter/period/{eid}",
+            params={"energy_level": energy_level, "date_range": date_range},
+        )
+
+    def get_storage_latest(self, sid: str, eid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/{sid}/devices/storage/latest/{eid}")
+
+    def get_storage_summary(self, sid: str, eid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/{sid}/devices/storage/summary/{eid}")
+
+    def get_ecu_energy(self, sid: str, eid: str, energy_level: str, date_range: str) -> dict[str, Any]:
+        return self._request(
+            f"/installer/api/v2/systems/{sid}/devices/ecu/energy/{eid}",
+            params={"energy_level": energy_level, "date_range": date_range},
+        )
+
+    def get_inverter_summary(self, sid: str, uid: str) -> dict[str, Any]:
+        return self._request(f"/installer/api/v2/systems/{sid}/devices/inverter/summary/{uid}")

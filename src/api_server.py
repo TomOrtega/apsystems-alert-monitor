@@ -390,21 +390,6 @@ def update_scheduler(data: SchedulerData):
         db.close()
 
 
-@app.post("/api/check")
-def trigger_check():
-    db = _get_db()
-    try:
-        from src.config import AccountConfig, load_config_from_db
-        config = load_config_from_db(db)
-        from src.monitor.checker import run_check
-        alertas = run_check(config.accounts, db)
-        return {"ok": True, "alertas_generadas": len(alertas)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
-
-
 @app.get("/api/logs")
 def get_logs(lines: int = Query(100)):
     try:
@@ -802,3 +787,113 @@ def manual_report():
         return report
     finally:
         db.close()
+
+
+@app.get("/api/influx/energy/{sid}")
+def get_influx_energy(sid: str, hours: int = Query(24)):
+    try:
+        from influxdb_client import InfluxDBClient
+        client = InfluxDBClient(
+            url=os.getenv("INFLUX_URL", "http://influxdb:8086"),
+            token=os.getenv("INFLUX_TOKEN", ""),
+            org=os.getenv("INFLUX_ORG", "apsystems"),
+        )
+        query_api = client.query_api()
+        flux = f'''
+            from(bucket: "{os.getenv("INFLUX_BUCKET", "solar_metrics")}")
+            |> range(start: -{hours}h)
+            |> filter(fn: (r) => r._measurement == "system_energy")
+            |> filter(fn: (r) => r.sid == "{sid}")
+            |> aggregateWindow(every: 1h, fn: mean, createEmpty: false)
+        '''
+        tables = query_api.query(flux)
+        results = []
+        for table in tables:
+            for record in table.records:
+                results.append({
+                    "time": record.get_time().isoformat(),
+                    "field": record.get_field(),
+                    "value": record.get_value(),
+                })
+        client.close()
+        return {"sid": sid, "hours": hours, "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"InfluxDB error: {str(e)}")
+
+
+@app.get("/api/influx/power/{sid}")
+def get_influx_power(sid: str, hours: int = Query(24)):
+    try:
+        from influxdb_client import InfluxDBClient
+        client = InfluxDBClient(
+            url=os.getenv("INFLUX_URL", "http://influxdb:8086"),
+            token=os.getenv("INFLUX_TOKEN", ""),
+            org=os.getenv("INFLUX_ORG", "apsystems"),
+        )
+        query_api = client.query_api()
+        flux = f'''
+            from(bucket: "{os.getenv("INFLUX_BUCKET", "solar_metrics")}")
+            |> range(start: -{hours}h)
+            |> filter(fn: (r) => r._measurement == "inverter_channel_power")
+            |> filter(fn: (r) => r.sid == "{sid}")
+            |> aggregateWindow(every: 5m, fn: mean, createEmpty: false)
+        '''
+        tables = query_api.query(flux)
+        results = []
+        for table in tables:
+            for record in table.records:
+                results.append({
+                    "time": record.get_time().isoformat(),
+                    "uid": record.values.get("uid", ""),
+                    "channel": record.values.get("channel", ""),
+                    "field": record.get_field(),
+                    "value": record.get_value(),
+                })
+        client.close()
+        return {"sid": sid, "hours": hours, "data": results}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"InfluxDB error: {str(e)}")
+
+
+@app.get("/api/influx/stats")
+def get_influx_stats():
+    try:
+        from influxdb_client import InfluxDBClient
+        client = InfluxDBClient(
+            url=os.getenv("INFLUX_URL", "http://influxdb:8086"),
+            token=os.getenv("INFLUX_TOKEN", ""),
+            org=os.getenv("INFLUX_ORG", "apsystems"),
+        )
+        query_api = client.query_api()
+        bucket = os.getenv("INFLUX_BUCKET", "solar_metrics")
+
+        flux = f'''
+            import "influxdata/influxdb/schema"
+            schema.measurements(bucket: "{bucket}")
+        '''
+        tables = query_api.query(flux)
+        measurements = []
+        for table in tables:
+            for record in table.records:
+                measurements.append(record.get_value())
+
+        client.close()
+        return {"measurements": measurements, "bucket": bucket}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"InfluxDB error: {str(e)}")
+
+
+@app.post("/api/collect")
+def trigger_collect():
+    try:
+        from src.config import load_config
+        from src.monitor.collector import collect_and_write
+        config = load_config()
+        db = _get_db()
+        try:
+            stats = collect_and_write(config.accounts, config.influx, db)
+            return {"ok": True, **stats}
+        finally:
+            db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error en recoleccion: {str(e)}")

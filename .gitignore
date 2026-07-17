@@ -18,6 +18,8 @@ build/
 # Database
 data/*.db
 pgdata/
+influxdata/
+influxconfig/
 
 # IDE
 .vscode/
@@ -31,8 +33,12 @@ Thumbs.db
 
 # Docker
 *.log
+logs/
 
 # Testing
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Tool configs
+.opencode/

@@ -290,11 +290,15 @@ class Database:
             for sid in sids:
                 cur.execute("UPDATE sistemas_disponibles SET monitorear = true WHERE account_index = %s AND sid = %s", (account_index, sid))
 
-    def get_monitored_sids(self, account_index: int) -> list[str]:
-        sql = "SELECT sid FROM sistemas_disponibles WHERE account_index = %s AND monitorear = true ORDER BY sid"
+    def get_monitored_sids(self, account_index: int | None = None, account_name: str | None = None) -> list[str]:
         conn = self._get_conn()
         with conn.cursor() as cur:
-            cur.execute(sql, (account_index,))
+            if account_name:
+                cur.execute("SELECT sid FROM sistemas_disponibles WHERE account_name = %s AND monitorear = true ORDER BY sid", (account_name,))
+            elif account_index is not None:
+                cur.execute("SELECT sid FROM sistemas_disponibles WHERE account_index = %s AND monitorear = true ORDER BY sid", (account_index,))
+            else:
+                return []
             return [r[0] for r in cur.fetchall()]
 
     def upsert_inventory(self, sid: str, details: dict, inverters_data: list, meters_data: list, storages_data):

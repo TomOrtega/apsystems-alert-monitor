@@ -20,11 +20,34 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
 
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD:-apsystems_secret_2024}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG:-apsystems}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET:-solar_metrics}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN:-apsystems-influx-token-2024}
+    volumes:
+      - influxdata:/var/lib/influxdb2
+      - influxconfig:/etc/influxdb2
+    ports:
+      - "8086:8086"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   monitor:
     build: .
     env_file: .env
     depends_on:
       postgres:
+        condition: service_healthy
+      influxdb:
         condition: service_healthy
     volumes:
       - ./logs:/app/logs
@@ -54,3 +77,5 @@ services:
 
 volumes:
   pgdata:
+  influxdata:
+  influxconfig:
